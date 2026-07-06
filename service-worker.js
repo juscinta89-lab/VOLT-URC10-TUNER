@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gagoh-tuner-v1';
+const CACHE_NAME = 'urc10-tuner-v2';
 const ASSETS = [
   './index.html',
   './manifest.json',

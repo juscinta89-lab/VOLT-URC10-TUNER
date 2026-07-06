@@ -1,7 +1,7 @@
 {
-  "name": "ROBOBUAS GAGOH Tuner",
-  "short_name": "GAGOH Tuner",
-  "description": "Tune trim, speed, deadzone, turn gain & expo untuk ROBOBUAS RC GAGOH terus dari phone guna USB.",
+  "name": "URC10 Tuner by VOLT Robotic",
+  "short_name": "URC10 Tuner",
+  "description": "Tune trim, speed, deadzone, turn gain, expo & kalibrasi RC untuk ROBOBUAS RC GAGOH terus dari phone guna USB.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

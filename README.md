@@ -1,8 +1,8 @@
-# ROBOBUAS GAGOH Tuner
+# URC10 Tuner by VOLT Robotic
 
 App tuning untuk firmware `urc10_gagoh_tuner.ino`. Sambung phone/laptop ke board guna USB,
-tune FWD/BWD trim, max speed, deadzone, turn gain, dan expo terus dari browser — tak payah
-buka Arduino IDE setiap kali nak ubah setting.
+tune FWD/BWD trim, max speed, deadzone, turn gain, expo, dan kalibrasi RC (CH1/CH2) terus
+dari browser — tak payah buka Arduino IDE setiap kali nak ubah setting.
 
 ## Struktur fail (jangan ubah nama/lokasi)
 
@@ -20,7 +20,7 @@ buka Arduino IDE setiap kali nak ubah setting.
 
 ## Langkah 1 — Upload ke GitHub
 
-1. Pergi ke [github.com/new](https://github.com/new), buat repo baru (contoh nama: `gagoh-tuner`).
+1. Pergi ke [github.com/new](https://github.com/new), buat repo baru (contoh nama: `URC10-tuner`).
    Boleh public atau private — GitHub Pages jalan untuk kedua-dua (private perlukan akaun
    GitHub Pro/Team/Enterprise untuk Pages; kalau nak percuma, guna **public**).
 2. Upload semua fail dalam folder ni (termasuk folder `icons/`) ke repo tu — boleh guna
@@ -32,7 +32,7 @@ buka Arduino IDE setiap kali nak ubah setting.
 2. Bawah "Build and deployment", pilih **Source: Deploy from a branch**.
 3. Branch pilih **main**, folder pilih **/ (root)**, tekan **Save**.
 4. Tunggu 1-2 minit, GitHub bagi URL macam:
-   `https://<username>.github.io/gagoh-tuner/`
+   `https://<username>.github.io/URC10-tuner/`
 
 Fail **kena** guna HTTPS (bukan `file://`) sebab Web Serial API dan Service Worker cuma jalan
 atas HTTPS (atau localhost) — GitHub Pages automatik bagi HTTPS, jadi tak payah setting apa-apa
@@ -49,7 +49,7 @@ tambahan.
 ## Langkah 4 — Sambung ke board
 
 1. Pasang kabel **USB-OTG** (USB-C atau Micro-USB ikut phone) antara phone dan board URC10.
-2. Buka app "GAGOH Tuner" dari home screen.
+2. Buka app "URC10 Tuner" dari home screen.
 3. Tekan **SAMBUNG USB**, phone akan minta pilih device serial — pilih board tu.
 4. Slider terus live, tekan **SAVE KE EEPROM** bila dah puas hati dengan setting.
 
