@@ -245,6 +245,45 @@
     </div>
   </div>
 
+  <div class="panel" id="calPanel">
+    <div class="panel-title">Kalibrasi RC (CH1 &amp; CH2)</div>
+    <div class="slider-hint" id="calStoredDisplay" style="margin-bottom:14px;">
+      Tersimpan — CH1: -- / -- / --  &nbsp;&nbsp; CH2: -- / -- / --
+    </div>
+
+    <div id="calIdleView">
+      <div class="slider-hint" style="margin-bottom:12px; line-height:1.5;">
+        Semasa kalibrasi, motor auto-stop (robot tak akan bergerak). Gerakkan kedua-dua stick
+        (CH1 &amp; CH2) ke SEMUA hujung beberapa kali, lepas tu lepaskan stick ke tengah dan
+        tekan "Tetapkan Tengah".
+      </div>
+      <button class="btn primary" id="btnCalStart" style="width:100%;" disabled>MULA KALIBRASI</button>
+    </div>
+
+    <div id="calActiveView" style="display:none;">
+      <div class="telemetry-grid" style="margin-bottom:14px;">
+        <div class="tel-card">
+          <div class="tel-label">CH1 RAW</div>
+          <div class="tel-value" id="calCh1Raw">--</div>
+          <div class="slider-hint" id="calCh1Range">min -- / max --</div>
+        </div>
+        <div class="tel-card">
+          <div class="tel-label">CH2 RAW</div>
+          <div class="tel-value" id="calCh2Raw">--</div>
+          <div class="slider-hint" id="calCh2Range">min -- / max --</div>
+        </div>
+      </div>
+      <div class="action-row" style="margin-bottom:10px;">
+        <button class="btn" id="btnCalCenter" style="width:100%;">TETAPKAN TENGAH</button>
+      </div>
+      <div class="slider-hint" id="calCenterDisplay" style="margin-bottom:14px;">Titik tengah: belum ditetapkan</div>
+      <div class="action-row">
+        <button class="btn" id="btnCalCancel">BATAL</button>
+        <button class="btn primary" id="btnCalSave">SIMPAN KALIBRASI</button>
+      </div>
+    </div>
+  </div>
+
   <div class="panel">
     <div class="panel-title">Trim &amp; Tuning</div>
 
@@ -341,6 +380,16 @@ const sliders = {
 const btnLoad = el('btnLoad');
 const btnSave = el('btnSave');
 
+// ---- Kalibrasi RC ----
+const calIdleView = el('calIdleView');
+const calActiveView = el('calActiveView');
+const btnCalStart = el('btnCalStart');
+const btnCalCenter = el('btnCalCenter');
+const btnCalCancel = el('btnCalCancel');
+const btnCalSave = el('btnCalSave');
+let calActive = false;
+let calCenterSet = false;
+
 function log(msg){
   const t = new Date().toLocaleTimeString();
   logBox.textContent += `\n[${t}] ${msg}`;
@@ -358,6 +407,10 @@ function setConnectedUI(state){
   Object.values(sliders).forEach(s => s.el.disabled = !state);
   btnLoad.disabled = !state;
   btnSave.disabled = !state;
+  btnCalStart.disabled = !state;
+  if(!state){
+    exitCalUI();
+  }
   if(state){
     statusDot.className = 'dot connected';
     statusText.textContent = 'CONNECTED';
@@ -424,6 +477,59 @@ function handleLine(line){
     return;
   }
 
+  if(line.startsWith('CALTEL,')){
+    const p = line.split(',');
+    // CALTEL,ch1,ch2,ch1min,ch1max,ch2min,ch2max
+    el('calCh1Raw').textContent = p[1];
+    el('calCh2Raw').textContent = p[2];
+    el('calCh1Range').textContent = `min ${p[3]} / max ${p[4]}`;
+    el('calCh2Range').textContent = `min ${p[5]} / max ${p[6]}`;
+    return;
+  }
+
+  if(line.startsWith('CALCFG,')){
+    const p = line.split(',');
+    // CALCFG,CH1MIN,v,CH1CTR,v,CH1MAX,v,CH2MIN,v,CH2CTR,v,CH2MAX,v
+    const m = {};
+    for(let i=1; i<p.length; i+=2){ m[p[i]] = p[i+1]; }
+    el('calStoredDisplay').textContent =
+      `Tersimpan — CH1: ${m.CH1MIN} / ${m.CH1CTR} / ${m.CH1MAX}   CH2: ${m.CH2MIN} / ${m.CH2CTR} / ${m.CH2MAX}`;
+    return;
+  }
+
+  if(line === 'OK,CALSTART'){
+    enterCalUI();
+    log('Mod kalibrasi bermula. Gerakkan stick ke semua hujung.');
+    return;
+  }
+
+  if(line === 'OK,CALSTOP'){
+    log('Mod kalibrasi ditamatkan (tiada disimpan).');
+    return;
+  }
+
+  if(line.startsWith('OK,CALCENTER,')){
+    const p = line.split(',');
+    calCenterSet = true;
+    el('calCenterDisplay').textContent = `Titik tengah: CH1=${p[2]} / CH2=${p[3]} \u2713`;
+    showToast('Titik tengah ditetapkan');
+    return;
+  }
+
+  if(line === 'OK,CALSAVED'){
+    exitCalUI();
+    showToast('Kalibrasi disimpan \u2713');
+    log('Kalibrasi CH1/CH2 disimpan ke EEPROM.');
+    return;
+  }
+
+  if(line.startsWith('ERR,CAL,')){
+    const reason = line.substring('ERR,CAL,'.length);
+    showToast('Gagal: ' + reason);
+    log('Ralat kalibrasi: ' + reason);
+    return;
+  }
+
   if(line.startsWith('OK,SAVED')){
     showToast('Setting disimpan ke EEPROM \u2713');
     log('Disimpan ke EEPROM.');
@@ -465,6 +571,7 @@ async function connectSerial(){
     log('Disambungkan ke board.');
     readLoopPromise = readLoop();
     setTimeout(()=> sendLine('GET'), 300); // minta config semasa lepas sambung
+    setTimeout(()=> sendLine('CAL,GET'), 500); // minta nilai kalibrasi tersimpan
   }catch(e){
     log('Gagal sambung: ' + e.message);
   }
@@ -508,6 +615,51 @@ btnLoad.addEventListener('click', () => {
 
 btnSave.addEventListener('click', () => {
   sendLine('SAVE');
+});
+
+// ---- Kalibrasi RC ----
+function enterCalUI(){
+  calActive = true;
+  calCenterSet = false;
+  calIdleView.style.display = 'none';
+  calActiveView.style.display = 'block';
+  el('calCenterDisplay').textContent = 'Titik tengah: belum ditetapkan';
+  el('calCh1Range').textContent = 'min -- / max --';
+  el('calCh2Range').textContent = 'min -- / max --';
+  // gelapkan panel trim masa kalibrasi supaya tak keliru (motor auto-stop kat firmware pun)
+  Object.values(sliders).forEach(s => s.el.disabled = true);
+}
+
+function exitCalUI(){
+  calActive = false;
+  calCenterSet = false;
+  calIdleView.style.display = 'block';
+  calActiveView.style.display = 'none';
+  if(connected){
+    Object.values(sliders).forEach(s => s.el.disabled = false);
+  }
+}
+
+btnCalStart.addEventListener('click', () => {
+  sendLine('CAL,START');
+});
+
+btnCalCenter.addEventListener('click', () => {
+  sendLine('CAL,CENTER');
+});
+
+btnCalCancel.addEventListener('click', () => {
+  sendLine('CAL,STOP');
+  exitCalUI();
+  log('Kalibrasi dibatalkan.');
+});
+
+btnCalSave.addEventListener('click', () => {
+  if(!calCenterSet){
+    showToast('Tetapkan titik tengah dulu');
+    return;
+  }
+  sendLine('CAL,SAVE');
 });
 
 // Semak sokongan browser
