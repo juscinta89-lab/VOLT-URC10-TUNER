@@ -215,8 +215,9 @@
   </div>
 
   <div id="unsupportedBox" class="unsupported" style="display:none;">
-    Browser ini tak sokong Web Serial API. Buka menggunakan <b>Google Chrome</b> atau <b>Microsoft Edge</b>
-    (di Android, sambungkan board guna kabel USB-OTG dalam Chrome).
+    Browser ini tak sokong sambungan USB langsung (Web Serial mahupun WebUSB). Cuba
+    <b>Google Chrome</b> versi terkini atau <b>Microsoft Edge</b>. Kalau masih gagal di phone,
+    guna laptop/PC — Web Serial jauh lebih stabil di desktop berbanding Android buat masa ini.
   </div>
 
   <button id="connectBtn" class="connectBtn">SAMBUNG USB &rarr;</button>
@@ -358,6 +359,27 @@
 
 <script>
 let port, reader, writer, readLoopPromise;
+
+// ---- Serial API resolver: guna Web Serial asli kalau ada, kalau tak cuba WebUSB polyfill ----
+// (Android Chrome belum sokong navigator.serial sepenuhnya - polyfill guna WebUSB sebagai ganti,
+// hanya jalan untuk device kelas USB CDC-ACM. Preload awal (bukan masa klik) supaya "user gesture"
+// daripada butang SAMBUNG USB tak hilang semasa menunggu modul polyfill dimuat dari CDN.)
+async function resolveSerialAPI(){
+  if('serial' in navigator){
+    return navigator.serial;
+  }
+  if('usb' in navigator){
+    try{
+      const mod = await import('https://cdn.jsdelivr.net/npm/web-serial-polyfill@1.0.15/+esm');
+      return mod.serial;
+    }catch(e){
+      console.error('Polyfill gagal dimuat:', e);
+      return null;
+    }
+  }
+  return null;
+}
+const serialAPIPromise = resolveSerialAPI();
 let lineBuffer = "";
 let connected = false;
 let sendDebounceTimers = {};
@@ -563,7 +585,13 @@ async function readLoop(){
 
 async function connectSerial(){
   try{
-    port = await navigator.serial.requestPort();
+    const api = await serialAPIPromise;
+    if(!api){
+      log('Tiada Web Serial / WebUSB pada browser ini. Guna Chrome/Edge, atau cuba laptop/PC.');
+      showToast('Browser ini tak sokong sambungan USB');
+      return;
+    }
+    port = await api.requestPort();
     await port.open({ baudRate: 9600 });
     reader = port.readable.getReader();
     writer = port.writable.getWriter();
@@ -573,7 +601,13 @@ async function connectSerial(){
     setTimeout(()=> sendLine('GET'), 300); // minta config semasa lepas sambung
     setTimeout(()=> sendLine('CAL,GET'), 500); // minta nilai kalibrasi tersimpan
   }catch(e){
-    log('Gagal sambung: ' + e.message);
+    if(e.name === 'NotFoundError'){
+      log('Tiada device dipilih, atau board tak dikesan. Semak kabel OTG & board ON.');
+    } else if(e.message && e.message.includes('claim interface')){
+      log('Gagal sambung: OS/driver lain dah "claim" device ni. Cuba tutup app lain yang guna USB, atau guna laptop/PC.');
+    } else {
+      log('Gagal sambung: ' + e.message);
+    }
   }
 }
 
@@ -663,10 +697,12 @@ btnCalSave.addEventListener('click', () => {
 });
 
 // Semak sokongan browser
-if(!('serial' in navigator)){
+if(!('serial' in navigator) && !('usb' in navigator)){
   el('unsupportedBox').style.display = 'block';
   connectBtn.disabled = true;
-  connectBtn.textContent = 'WEB SERIAL TIDAK DISOKONG';
+  connectBtn.textContent = 'USB/SERIAL TIDAK DISOKONG';
+} else if(!('serial' in navigator)){
+  log('Web Serial asli tiada pada browser ini - cuba sambung guna WebUSB polyfill (terhad kepada device kelas USB CDC-ACM sahaja).');
 }
 
 window.addEventListener('beforeunload', () => {

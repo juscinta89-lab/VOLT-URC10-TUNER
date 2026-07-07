@@ -1,4 +1,4 @@
-const CACHE_NAME = 'urc10-tuner-v2';
+const CACHE_NAME = 'urc10-tuner-v3';
 const ASSETS = [
   './index.html',
   './manifest.json',
