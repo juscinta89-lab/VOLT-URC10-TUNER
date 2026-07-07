@@ -579,50 +579,123 @@ async function readLoop(){
       }
     }
   }catch(e){
-    log('Read loop berhenti: ' + e.message);
+    log('Sambungan terputus: ' + e.message);
+  } finally {
+    // Loop ni tamat sebab port ditutup secara sengaja ATAU device dicabut secara fizikal.
+    // Dalam kedua-dua kes, UI kena reflect status "disconnected" yang sebenar.
+    await cleanupAfterDisconnect();
   }
 }
 
-async function connectSerial(){
+// Guard elak cleanup dipanggil dua kali (contoh: disconnectSerial() + readLoop() punya finally serentak)
+async function cleanupAfterDisconnect(){
+  if(!connected && !port) return;
+  try{ if(reader){ reader.releaseLock(); } }catch(e){}
+  try{ if(writer){ writer.releaseLock(); } }catch(e){}
+  try{ if(port){ await port.close(); } }catch(e){}
+  reader = null; writer = null; port = null;
+  setConnectedUI(false);
+}
+
+// Buka port yang dipilih (dari requestPort() ATAU getPorts()) dan mula baca data
+async function openPort(selectedPort, api){
   try{
-    const api = await serialAPIPromise;
-    if(!api){
-      log('Tiada Web Serial / WebUSB pada browser ini. Guna Chrome/Edge, atau cuba laptop/PC.');
-      showToast('Browser ini tak sokong sambungan USB');
-      return;
-    }
-    port = await api.requestPort();
+    port = selectedPort;
     await port.open({ baudRate: 9600 });
     reader = port.readable.getReader();
     writer = port.writable.getWriter();
     setConnectedUI(true);
     log('Disambungkan ke board.');
     readLoopPromise = readLoop();
-    setTimeout(()=> sendLine('GET'), 300); // minta config semasa lepas sambung
-    setTimeout(()=> sendLine('CAL,GET'), 500); // minta nilai kalibrasi tersimpan
+    // Auto muat setting semasa lepas sambung (manual ATAU auto-reconnect) - elak keliru dengan nilai lapuk
+    setTimeout(()=> sendLine('GET'), 300);
+    setTimeout(()=> sendLine('CAL,GET'), 500);
   }catch(e){
-    if(e.name === 'NotFoundError'){
-      log('Tiada device dipilih, atau board tak dikesan. Semak kabel OTG & board ON.');
-    } else if(e.message && e.message.includes('claim interface')){
-      log('Gagal sambung: OS/driver lain dah "claim" device ni. Cuba tutup app lain yang guna USB, atau guna laptop/PC.');
-    } else {
-      log('Gagal sambung: ' + e.message);
+    handleConnectError(e);
+    port = null;
+  }
+}
+
+function handleConnectError(e){
+  if(e.name === 'NotFoundError'){
+    log('Tiada device dipilih, atau board tak dikesan. Semak kabel OTG & board ON.');
+  } else if(e.message && e.message.includes('claim interface')){
+    log('Gagal sambung: OS/driver lain dah "claim" device ni. Cuba tutup app lain yang guna USB, atau guna laptop/PC.');
+  } else {
+    log('Gagal sambung: ' + e.message);
+  }
+}
+
+// Klik butang SAMBUNG: kalau board dah pernah "pair" (authorized) sebelum ni, terus sambung
+// tanpa tunjuk dialog pilih device lagi. Dialog pilih device cuma muncul first-time pairing.
+async function connectSerial(){
+  const api = await serialAPIPromise;
+  if(!api){
+    log('Tiada Web Serial / WebUSB pada browser ini. Guna Chrome/Edge, atau cuba laptop/PC.');
+    showToast('Browser ini tak sokong sambungan USB');
+    return;
+  }
+  try{
+    let selected = null;
+    if(api.getPorts){
+      const authorized = await api.getPorts();
+      if(authorized.length > 0) selected = authorized[0];
     }
+    if(!selected){
+      selected = await api.requestPort(); // first-time pairing sahaja
+    }
+    await openPort(selected, api);
+  }catch(e){
+    handleConnectError(e);
   }
 }
 
 async function disconnectSerial(){
   try{
-    if(reader){ await reader.cancel().catch(()=>{}); reader.releaseLock(); }
-    if(writer){ writer.releaseLock(); }
-    if(port){ await port.close(); }
+    if(reader){ await reader.cancel().catch(()=>{}); }
   }catch(e){
     log('Ralat semasa putuskan: ' + e.message);
   }
-  reader = null; writer = null; port = null;
-  setConnectedUI(false);
+  await cleanupAfterDisconnect();
   log('Sambungan diputuskan.');
 }
+
+// Auto-sambung sekali bila app dibuka, kalau board yang sama (dah "pair" sebelum ni) masih
+// tersambung fizikal masa tu - elak kena tekan butang setiap kali buka app.
+async function attemptAutoConnectAtLoad(){
+  const api = await serialAPIPromise;
+  if(!api || !api.getPorts || connected) return;
+  try{
+    const ports = await api.getPorts();
+    if(ports.length > 0){
+      log('Board berdaftar dikesan, cuba sambung automatik...');
+      await openPort(ports[0], api);
+    }
+  }catch(e){ console.log('Auto-connect awal gagal:', e); }
+}
+
+// Dengar event cabut/pasang USB fizikal (kalau browser sokong) - auto sambung semula lepas
+// cabut-pasang tanpa perlu pair balik, dan auto kemas kini indicator bila dicabut.
+function setupPlugEvents(api){
+  if(!api || !api.addEventListener) return;
+  api.addEventListener('connect', async (e) => {
+    log('Board dikesan (USB disambung). Cuba sambung automatik...');
+    if(!connected){
+      await openPort(e.port, api);
+    }
+  });
+  api.addEventListener('disconnect', (e) => {
+    if(connected && port === e.port){
+      log('Board USB dicabut.');
+      cleanupAfterDisconnect();
+    }
+  });
+}
+
+serialAPIPromise.then(api => {
+  setupPlugEvents(api);
+  attemptAutoConnectAtLoad();
+});
 
 connectBtn.addEventListener('click', () => {
   if(connected){ disconnectSerial(); }
